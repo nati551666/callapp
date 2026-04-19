@@ -1,0 +1,26 @@
+{
+    "name": "CallApp - מנתח שיחות",
+    "short_name": "CallApp",
+    "description": "מנתח שיחות לעסק איטום והדברה",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#f0f4f8",
+    "theme_color": "#1a73e8",
+    "orientation": "portrait",
+    "lang": "he",
+    "dir": "rtl",
+    "icons": [
+          {
+                  "src": "/icon.png",
+                  "sizes": "192x192",
+                  "type": "image/png",
+                  "purpose": "any maskable"
+          },
+          {
+                  "src": "/icon.png",
+                  "sizes": "512x512",
+                  "type": "image/png",
+                  "purpose": "any maskable"
+          }
+    ]
+}
