@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+  <html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1a73e8">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="CallApp">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="/icon.png">
+    <title>CallApp - מנתח שיחות</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #333; }
+        .header { background: linear-gradient(135deg, #1a73e8, #0d47a1); color: white; padding: 20px; text-align: center; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+    .header h1 { font-size: 22px; font-weight: 700; }
+    .header p { font-size: 13px; opacity: 0.85; margin-top: 4px; }
+    .stats { display: flex; gap: 12px; padding: 16px; overflow-x: auto; }
+    .stat-card { background: white; border-radius: 16px; padding: 16px 20px; min-width: 130px; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,0.08); flex: 1; }
+    .stat-card .num { font-size: 32px; font-weight: 800; color: #1a73e8; }
+    .stat-card .label { font-size: 12px; color: #666; margin-top: 4px; }
+    .section-title { padding: 8px 16px; font-size: 14px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }
+    .calls-list { padding: 0 12px 80px; }
+    .call-card { background: white; border-radius: 16px; margin-bottom: 12px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.07); transition: transform 0.2s; }
+    .call-card:active { transform: scale(0.98); }
+    .call-header { display: flex; align-items: center; padding: 14px 16px; gap: 12px; }
+    .call-avatar { width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, #1a73e8, #0d47a1); display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+    .call-info { flex: 1; }
+    .call-name { font-size: 16px; font-weight: 700; color: #222; }
+    .call-time { font-size: 12px; color: #888; margin-top: 2px; }
+    .call-badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .badge-pest { background: #fff3e0; color: #e65100; }
+          .badge-seal { background: #e8f5e9; color: #2e7d32; }
+          .badge-other { background: #f3e5f5; color: #6a1b9a; }
+          .call-details { padding: 0 16px 14px; border-top: 1px solid #f5f5f5; }
+          .detail-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; color: #444; border-bottom: 1px solid #fafafa; }
+    .detail-row:last-child { border-bottom: none; }
+    .detail-icon { font-size: 16px; width: 24px; text-align: center; }
+    .detail-label { color: #888; min-width: 60px; font-size: 12px; }
+    .detail-value { font-weight: 500; flex: 1; }
+    .call-actions { display: flex; padding: 12px 16px; gap: 8px; border-top: 1px solid #f5f5f5; }
+    .btn { flex: 1; padding: 10px; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: opacity 0.2s; }
+    .btn:active { opacity: 0.7; }
+    .btn-call { background: #e8f5e9; color: #2e7d32; }
+          .btn-whatsapp { background: #e3f2fd; color: #1565c0; }
+    .btn-expand { background: #f5f5f5; color: #555; }
+          .fab { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: linear-gradient(135deg, #1a73e8, #0d47a1); color: white; border: none; border-radius: 28px; padding: 14px 28px; font-size: 15px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 20px rgba(26,115,232,0.5); display: flex; align-items: center; gap: 8px; z-index: 100; }
+          .empty { text-align: center; padding: 60px 20px; color: #888; }
+    .empty-icon { font-size: 64px; margin-bottom: 16px; }
+    .empty p { font-size: 16px; margin-bottom: 8px; }
+    .empty small { font-size: 13px; color: #aaa; }
+        .loading { text-align: center; padding: 40px; color: #888; }
+    .spinner { display: inline-block; width: 32px; height: 32px; border: 3px solid #e0e0e0; border-top-color: #1a73e8; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 12px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .summary-box { background: #f8f9ff; border-right: 3px solid #1a73e8; padding: 10px 14px; border-radius: 0 8px 8px 0; margin: 8px 0; font-size: 13px; color: #444; line-height: 1.5; }
+          .price-tag { background: linear-gradient(135deg, #43a047, #2e7d32); color: white; padding: 3px 10px; border-radius: 20px; font-weight: 700; font-size: 13px; }
+    .refresh-btn { background: none; border: none; cursor: pointer; font-size: 20px; padding: 4px; }
+    .header-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px 0; }
+    details summary { cursor: pointer; list-style: none; }
+    details summary::-webkit-details-marker { display: none; }
+  </style>
+      </head>
+      <body>
+
+      <div class="header">
+        <h1>📞 CallApp</h1>
+        <p>מנתח שיחות — איטום והדברה</p>
+      </div>
+
+      <div class="stats" id="stats">
+        <div class="stat-card"><div class="num" id="total-calls">0</div><div class="label">סה"כ שיחות</div></div>
+        <div class="stat-card"><div class="num" id="today-calls">0</div><div class="label">היום</div></div>
+        <div class="stat-card"><div class="num" id="with-price">0</div><div class="label">עם מחיר</div></div>
+      </div>
+
+      <div class="header-row">
+        <div class="section-title">שיחות אחרונות</div>
+        <button class="refresh-btn" onclick="loadCalls()" title="רענן">🔄</button>
+      </div>
+
+      <div class="calls-list" id="calls-list">
+        <div class="loading"><div class="spinner"></div><br>טוען שיחות...</div>
+      </div>
+
+      <button class="fab" onclick="loadCalls()">🔄 רענן</button>
+
+      <script>
+      const API = '';
+
+function getProblemBadge(type) {
+    if (!type) return '';
+        const t = type.toLowerCase();
+  if (t.includes('הדבר') || t.includes('ניתקן') || t.includes('עכבר') || t.includes('ג׳וק') || t.includes('פרעוש')) {
+    return '<span class="call-badge badge-pest">🐛 ' + type + '</span>';
+}
+  if (t.includes('איטום')) {
+    return '<span class="call-badge badge-seal">🔧 ' + type + '</span>';
+}
+  return '<span class="call-badge badge-other">📋 ' + type + '</span>';
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleString('he-IL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+} catch(e) { return dateStr; }
+}
+
+function formatDuration(start, end) {
+  if (!start || !end) return '';
+  const diff = Math.round((new Date(end) - new Date(start)) / 60000);
+  return diff + ' דק׳';
+}
+
+function renderCall(call) {
+  const a = call.analysis || {};
+  const name = a.customerName || 'לא זוהה';
+  const phone = a.customerPhone || call.caller || '';
+  const address = a.address || '';
+  const problem = a.problemType || '';
+  const price = a.agreedPrice || '';
+  const visitDate = a.visitDate || '';
+  const summary = a.summary || '';
+  const duration = formatDuration(call.startTime, call.endTime);
+  const time = formatDate(call.startTime);
+  const cleanPhone = phone.replace(/\D/g, '');
+
+  return `
+  <div class="call-card">
+    <div class="call-header">
+      <div class="call-avatar">👤</div>
+      <div class="call-info">
+        <div class="call-name">${name}</div>
+        <div class="call-time">📅 ${time} ${duration ? '· ⏱️ ' + duration : ''}</div>
+      </div>
+      ${getProblemBadge(problem)}
+    </div>
+    <details>
+      <summary>
+        <div class="call-details">
+          ${phone ? `<div class="detail-row"><span class="detail-icon">📱</span><span class="detail-label">טלפון</span><span class="detail-value">${phone}</span></div>` : ''}
+          ${address ? `<div class="detail-row"><span class="detail-icon">🏠</span><span class="detail-label">כתובת</span><span class="detail-value">${address}</span></div>` : ''}
+          ${price ? `<div class="detail-row"><span class="detail-icon">💰</span><span class="detail-label">מחיר</span><span class="detail-value"><span class="price-tag">${price}</span></span></div>` : ''}
+          ${visitDate ? `<div class="detail-row"><span class="detail-icon">📆</span><span class="detail-label">ביקור</span><span class="detail-value">${visitDate}</span></div>` : ''}
+          ${summary ? `<div class="summary-box">📋 ${summary}</div>` : ''}
+        </div>
+      </summary>
+    </details>
+    <div class="call-actions">
+      ${cleanPhone ? `<button class="btn btn-call" onclick="window.location='tel:${cleanPhone}'">📞 התקשר</button>` : ''}
+      ${cleanPhone ? `<button class="btn btn-whatsapp" onclick="window.open('https://wa.me/${cleanPhone}')">💬 WhatsApp</button>` : ''}
+    </div>
+  </div>`;
+}
+
+async function loadCalls() {
+  const list = document.getElementById('calls-list');
+  list.innerHTML = '<div class="loading"><div class="spinner"></div><br>טוען...</div>';
+  try {
+    const res = await fetch(API + '/api/calls');
+    const calls = await res.json();
+    document.getElementById('total-calls').textContent = calls.length;
+    const today = new Date().toDateString();
+    document.getElementById('today-calls').textContent = calls.filter(c => new Date(c.startTime).toDateString() === today).length;
+    document.getElementById('with-price').textContent = calls.filter(c => c.analysis && c.analysis.agreedPrice).length;
+    if (calls.length === 0) {
+      list.innerHTML = `<div class="empty"><div class="empty-icon">📭</div><p>אין שיחות עדיין</p><small>כשלקוח יתקשר — הפרטים יופיעו כאן</small></div>`;
+      return;
+}
+    list.innerHTML = calls.map(renderCall).join('');
+} catch(e) {
+    list.innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>שגיאה בטעינה</p><small>${e.message}</small></div>`;
+}
+}
+
+loadCalls();
+setInterval(loadCalls, 30000);
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(()=>{});
+}
+</script>
+</body>
+</html>
