@@ -1,11 +1,12 @@
 require('dotenv').config();
 const express = require('express');
-const twilio = require('twilio');
 const { OpenAI } = require('openai');
 const axios = require('axios');
 const cors = require('cors');
 const path = require('path');
-const { Readable } = require('stream');
+const multer = require('multer');
+const fs = require('fs');
+const FormData = require('form-data');
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
@@ -14,102 +15,71 @@ app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+const upload = multer({ dest: '/tmp/uploads/' });
+const calls = [];
 
-const activeCalls = {};
-const callHistory = [];
-
-app.post('/incoming-call', (req, res) => {
-  const callSid = req.body.CallSid;
-  const callerNumber = req.body.From;
-  console.log('Incoming call from ' + callerNumber);
-  activeCalls[callSid] = { sid: callSid, caller: callerNumber, startTime: new Date(), recordingUrl: null, transcript: null, analysis: null };
-  const twiml = new twilio.twiml.VoiceResponse();
-  twiml.say({ language: 'he-IL', voice: 'Polly.Ayelet' }, 'shalom, higatem leshirut itum vehadbarah. ana hamtinu lehitchabrut.');
-  const dial = twiml.dial({
-    record: 'record-from-ringing',
-    recordingStatusCallback: 'https://server-production-eca3.up.railway.app/recording-complete',
-    recordingStatusCallbackMethod: 'POST',
-    action: 'https://server-production-eca3.up.railway.app/call-complete',
-    timeout: 30
+async function transcribeAudio(filePath) {
+  const formData = new FormData();
+  formData.append('file', fs.createReadStream(filePath));
+  formData.append('model', 'whisper-1');
+  formData.append('language', 'he');
+  const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', formData, {
+    headers: { ...formData.getHeaders(), Authorization: 'Bearer ' + process.env.OPENAI_API_KEY }
   });
-  dial.number(process.env.OWNER_WHATSAPP);
-  res.type('text/xml');
-  res.send(twiml.toString());
-});
-
-app.post('/recording-complete', async (req, res) => {
-  const callSid = req.body.CallSid;
-  const recordingUrl = req.body.RecordingUrl;
-  console.log('Recording complete for ' + callSid);
-  if (activeCalls[callSid]) activeCalls[callSid].recordingUrl = recordingUrl;
-  try {
-    const recordingResponse = await axios.get(recordingUrl + '.mp3', {
-      auth: { username: process.env.TWILIO_ACCOUNT_SID, password: process.env.TWILIO_AUTH_TOKEN },
-      responseType: 'arraybuffer'
-    });
-    const audioBuffer = Buffer.from(recordingResponse.data);
-    const stream = Readable.from(audioBuffer);
-    stream.path = 'recording.mp3';
-    const transcription = await openai.audio.transcriptions.create({ file: stream, model: 'whisper-1', language: 'he', response_format: 'text' });
-    console.log('Transcript done');
-    const analysis = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: 'Analyze the Hebrew call and extract JSON: {"customerName":"","customerPhone":"","address":"","problemType":"","agreedPrice":"","visitDate":"","summary":"","followUp":""}' },
-        { role: 'user', content: transcription }
-      ],
-      response_format: { type: 'json_object' }
-    });
-    const analysisData = JSON.parse(analysis.choices[0].message.content);
-    if (activeCalls[callSid]) {
-      activeCalls[callSid].transcript = transcription;
-      activeCalls[callSid].analysis = analysisData;
-      activeCalls[callSid].endTime = new Date();
-      callHistory.unshift(activeCalls[callSid]);
-    }
-    await sendWhatsAppNotification(activeCalls[callSid]);
-  } catch (error) { console.error('Error:', error.message); }
-  res.sendStatus(200);
-});
-
-app.post('/call-complete', (req, res) => {
-  const twiml = new twilio.twiml.VoiceResponse();
-  res.type('text/xml');
-  res.send(twiml.toString());
-});
-
-async function sendWhatsAppNotification(callData) {
-  try {
-    const a = callData.analysis || {};
-    const duration = callData.endTime ? Math.round((new Date(callData.endTime) - new Date(callData.startTime)) / 60000) : 0;
-    const message = '* shiah hadashah - itum vehadbarah *' +
-      ' zman: ' + new Date(callData.startTime).toLocaleString('he-IL') +
-      ' mis: ' + callData.caller +
-      ' meshech: ' + duration + ' dakot' +
-      ' | lkoch: ' + (a.customerName || 'lo zuhah') +
-      ' | ktovet: ' + (a.address || 'lo nimsrah') +
-      ' | baayah: ' + (a.problemType || 'lo zuhah') +
-      ' | mechir: ' + (a.agreedPrice || 'lo suksam') +
-      ' | bikur: ' + (a.visitDate || 'lo nkevah') +
-      ' | ' + (a.summary || '');
-    await twilioClient.messages.create({ from: 'whatsapp:' + process.env.TWILIO_PHONE_NUMBER, to: 'whatsapp:' + process.env.OWNER_WHATSAPP, body: message });
-    console.log('WhatsApp sent');
-  } catch (error) { console.error('WhatsApp error:', error.message); }
+  return response.data.text;
 }
 
-app.get('/api/calls', (req, res) => res.json(callHistory));
-app.get('/api/calls/:sid', (req, res) => {
-  const call = callHistory.find(c => c.sid === req.params.sid);
-  call ? res.json(call) : res.status(404).json({ error: 'Not found' });
+async function analyzeCall(transcript) {
+  const completion = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    messages: [
+      { role: 'system', content: 'You are an assistant for a pest control business. Extract from transcript: customer name, address, problem type, agreed price, visit date. Reply ONLY in Hebrew.' },
+      { role: 'user', content: 'Transcript: ' + transcript }
+    ]
+  });
+  return completion.choices[0].message.content;
+}
+
+async function sendWhatsApp(message) {
+  const owner = process.env.OWNER_WHATSAPP;
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  if (!sid || !token || !owner) return;
+  await axios.post(
+    'https://api.twilio.com/2010-04-01/Accounts/' + sid + '/Messages.json',
+    new URLSearchParams({ From: 'whatsapp:+14155238886', To: 'whatsapp:+' + owner, Body: message }),
+    { auth: { username: sid, password: token } }
+  );
+}
+
+app.post('/upload-recording', upload.single('audio'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No audio file' });
+    const filePath = req.file.path;
+    console.log('Received recording:', req.file.originalname);
+    const transcript = await transcribeAudio(filePath);
+    const analysis = await analyzeCall(transcript);
+    const callData = {
+      id: Date.now(),
+      timestamp: new Date().toISOString(),
+      transcript,
+      analysis,
+      phone: req.body.phone || 'unknown'
+    };
+    calls.unshift(callData);
+    if (calls.length > 100) calls.pop();
+    const msg = 'שיחה חדשה!\n' + analysis + '\n\nמספר: ' + callData.phone;
+    await sendWhatsApp(msg);
+    fs.unlinkSync(filePath);
+    res.json({ success: true, analysis });
+  } catch (err) {
+    console.error('Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.get('/sw.js', (req, res) => {
-  res.setHeader('Content-Type', 'application/javascript');
-  res.sendFile(path.join(__dirname, 'public', 'sw.js'));
-});
-
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/calls', (req, res) => res.json(calls));
+app.get('/health', (req, res) => res.json({ status: 'ok', calls: calls.length }));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log('CallApp running on port ' + PORT));
+app.listen(PORT, () => console.log('Server on port ' + PORT));
